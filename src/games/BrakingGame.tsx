@@ -1,1075 +1,844 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Difficulty } from '../utils/storage';
+import {useEffect,useRef,useState} from 'react';
+import type {Difficulty} from '../utils/storage';
 
-export interface BrakingResult {
-  score: number;
-  accuracy: number;
-  avgStopMs: number;
-  bestStopMs: number;
-  consistency: number;
-  successes: number;
-  trials: number;
-  difficulty: Difficulty;
-  shots: number;
-  movingShots: number;
-  headHits: number;
-  bodyHits: number;
-  overshoots: number;
-  undershoots: number;
-  duration: number;
-  timeLimit: number;
+export interface BrakingResult{
+  score:number;
+  accuracy:number;
+  avgStopMs:number;
+  bestStopMs:number;
+  consistency:number;
+  successes:number;
+  trials:number;
+  difficulty:Difficulty;
+  shots:number;
+  movingShots:number;
+  headHits:number;
+  bodyHits:number;
+  overshoots:number;
+  undershoots:number;
+  duration:number;
+  timeLimit:number;
 }
 
-interface Props {
-  onBack: () => void;
-  onFinish: (r: BrakingResult) => void;
+interface Props{
+  onBack:()=>void;
+  onFinish:(r:BrakingResult)=>void
 }
 
-const ROUND = 30000;
-const COUNTDOWN_MS = 650;
+const TIME_LIMIT=30;
 
-const DIFF: Record<
-  Difficulty,
-  {
-    label: string;
-    tag: string;
-    desc: string;
-    maxSpeed: number;
-    accel: number;
-    stopSpeed: number;
-    window: number;
+const DIFF:Record<Difficulty,{
+  label:string;
+  tag:string;
+  desc:string;
+  maxSpeed:number;
+  accel:number;
+  window:number;
+  bodyRadius:number;
+  headRadius:number;
+}>={
+  newbie:{
+    label:'응애 나 뉴비에요',
+    tag:'ENTRY',
+    desc:'넓은 정지 창 · 카운터 스트레이프 감각',
+    maxSpeed:360,
+    accel:4.2,
+    window:14,
+    bodyRadius:20,
+    headRadius:9
+  },
+
+  normal:{
+    label:'이제 사람 구실 좀 해볼게요',
+    tag:'RANKED',
+    desc:'실전 템포 · 짧은 정지 창',
+    maxSpeed:500,
+    accel:5.4,
+    window:9,
+    bodyRadius:18,
+    headRadius:8
+  },
+
+  hard:{
+    label:'나 정도면 실력자지',
+    tag:'HARD',
+    desc:'빠른 이동 · 짧은 발사 창',
+    maxSpeed:620,
+    accel:6.5,
+    window:7,
+    bodyRadius:15,
+    headRadius:7
+  },
+
+  hell:{
+    label:'경쟁에서 캐리할게요',
+    tag:'HELL',
+    desc:'프로 템포 · 극도로 짧은 발사 창',
+    maxSpeed:760,
+    accel:7.6,
+    window:5,
+    bodyRadius:12,
+    headRadius:5
   }
-> = {
-  newbie: {
-    label: '응애 나 뉴비에요',
-    tag: 'ENTRY',
-    desc: '넓은 정지 창 · 브레이킹 감각',
-    maxSpeed: 360,
-    accel: 4.2,
-    stopSpeed: 22,
-    window: 14,
-  },
-
-  normal: {
-    label: '이제 사람 구실 좀 해볼게요',
-    tag: 'RANKED',
-    desc: '실전 템포 · 짧은 정지 창',
-    maxSpeed: 500,
-    accel: 5.4,
-    stopSpeed: 18,
-    window: 9,
-  },
-
-  hard: {
-    label: '나 정도면 실력자지',
-    tag: 'HARD',
-    desc: '빠른 이동 · 짧은 발사 창',
-    maxSpeed: 620,
-    accel: 6.5,
-    stopSpeed: 15,
-    window: 7,
-  },
-
-  hell: {
-    label: '경쟁에서 캐리할게요',
-    tag: 'HELL',
-    desc: '프로 템포 · 극도로 짧은 발사 창',
-    maxSpeed: 760,
-    accel: 7.6,
-    stopSpeed: 12,
-    window: 5,
-  },
 };
 
-type Phase = 'intro' | 'countdown' | 'playing';
-
-type ShotType = 'head' | 'body' | 'miss' | 'moving';
-
-type ShotState = {
-  type: ShotType;
-  x: number;
-  id: number;
-};
-
-type TargetState = {
-  x: number;
-  direction: -1 | 1;
-  id: number;
-};
-
-type Stats = {
-  shots: number;
-  successes: number;
-  movingShots: number;
-  headHits: number;
-  bodyHits: number;
-  overshoots: number;
-  undershoots: number;
-  stopTimes: number[];
-};
-
-const rand = (min: number, max: number) =>
-  min + Math.random() * (max - min);
-
-const clamp = (
-  value: number,
-  min: number,
-  max: number,
-) => Math.max(min, Math.min(max, value));
-
-const createStats = (): Stats => ({
-  shots: 0,
-  successes: 0,
-  movingShots: 0,
-  headHits: 0,
-  bodyHits: 0,
-  overshoots: 0,
-  undershoots: 0,
-  stopTimes: [],
-});
+const rand=(a:number,b:number)=>
+  a+Math.random()*(b-a);
 
 export default function BrakingGame({
   onBack,
-  onFinish,
-}: Props) {
-  const [phase, setPhase] =
-    useState<Phase>('intro');
+  onFinish
+}:Props){
 
-  const [difficulty, setDifficulty] =
-    useState<Difficulty>('normal');
+  const [
+    difficulty,
+    setDifficulty
+  ]=useState<Difficulty>('normal');
 
-  const [count, setCount] = useState(3);
+  const [
+    phase,
+    setPhase
+  ]=useState<'intro'|'live'>('intro');
 
-  const [time, setTime] = useState(30);
+  const [
+    shots,
+    setShots
+  ]=useState(0);
 
-  const [player, setPlayer] = useState(50);
+  const [
+    speed,
+    setSpeed
+  ]=useState(0);
 
-  const [target, setTarget] = useState(72);
+  const [
+    timeLeft,
+    setTimeLeft
+  ]=useState(TIME_LIMIT);
 
-  const [speed, setSpeed] = useState(0);
+  const [
+    player,
+    setPlayer
+  ]=useState(50);
 
-  const [canFire, setCanFire] =
-    useState(false);
+  const [
+    target,
+    setTarget
+  ]=useState(72);
 
-  const [message, setMessage] =
-    useState('D로 이동 → 키를 떼면 정지');
+  const [
+    message,
+    setMessage
+  ]=useState('');
 
-  const [shot, setShot] =
-    useState<ShotState | null>(null);
+  const [
+    shot,
+    setShot
+  ]=useState<{
+    type:'head'|'body'|'miss'|'moving';
+    x:number
+  }|null>(null);
 
-  const [hud, setHud] = useState({
-    hits: 0,
-    shots: 0,
-    head: 0,
-    moving: 0,
+  const [
+    canFire,
+    setCanFire
+  ]=useState(false);
+
+  const keys=useRef({
+    a:false,
+    d:false
   });
 
-  const phaseRef = useRef<Phase>('intro');
+  const raf=useRef(0);
 
-  const rafRef = useRef<number | null>(null);
+  const last=useRef(0);
 
-  const timerRefs = useRef<number[]>([]);
+  const pos=useRef(50);
 
-  const startRef = useRef(0);
+  const vel=useRef(0);
 
-  const lastRef = useRef(0);
+  const targetRef=useRef(72);
 
-  const targetIdRef = useRef(0);
+  const phaseRef=
+    useRef<'intro'|'live'>('intro');
 
-  const targetRef =
-    useRef<TargetState | null>(null);
+  const brakeStart=useRef(0);
 
-  const playerRef = useRef(50);
+  const stopAt=useRef(0);
 
-  const velocityRef = useRef(0);
+  const stableSince=useRef(0);
 
-  const directionRef =
-    useRef<-1 | 0 | 1>(0);
+  const startAt=useRef(0);
 
-  const movementStartRef =
-    useRef(0);
-
-  const stoppedAtRef = useRef(0);
-
-  const statsRef =
-    useRef<Stats>(createStats());
-
-  const keysRef = useRef({
-    a: false,
-    d: false,
+  const stats=useRef({
+    stops:[] as number[],
+    success:0,
+    shots:0,
+    moving:0,
+    head:0,
+    body:0,
+    over:0,
+    under:0
   });
 
-  const stoppedRef = useRef(false);
+  const cleanup=()=>{
+    cancelAnimationFrame(
+      raf.current
+    );
+  };
 
-  const clearTimers = useCallback(() => {
-    timerRefs.current.forEach((id) => {
-      window.clearTimeout(id);
-      window.clearInterval(id);
-    });
-
-    timerRefs.current = [];
-  }, []);
-
-  const stopLoop = useCallback(() => {
-    if (rafRef.current !== null) {
-      cancelAnimationFrame(rafRef.current);
-      rafRef.current = null;
-    }
-  }, []);
-
-  const cleanup = useCallback(() => {
-    stopLoop();
-    clearTimers();
-
-    keysRef.current.a = false;
-    keysRef.current.d = false;
-  }, [clearTimers, stopLoop]);
-
-  const syncHud = useCallback(() => {
-    const s = statsRef.current;
-
-    setHud({
-      hits: s.successes,
-      shots: s.shots,
-      head: s.headHits,
-      moving: s.movingShots,
-    });
-  }, []);
-
-  const spawnTarget = useCallback(() => {
-    if (phaseRef.current !== 'playing') {
-      return;
-    }
-
-    const direction: -1 | 1 =
-      Math.random() < 0.5 ? -1 : 1;
-
-    const x =
-      direction === 1
-        ? rand(68, 84)
-        : rand(16, 32);
-
-    const targetState: TargetState = {
-      x,
-      direction,
-      id: ++targetIdRef.current,
-    };
-
-    targetRef.current = targetState;
-
-    playerRef.current = 50;
-
-    velocityRef.current = 0;
-
-    directionRef.current = direction;
-
-    movementStartRef.current = 0;
-
-    stoppedAtRef.current = 0;
-
-    stoppedRef.current = true;
-
-    setPlayer(50);
-
-    setTarget(x);
-
-    setSpeed(0);
-
-    setCanFire(true);
-
-    setShot(null);
-
-    setMessage('STOPPED — FIRE');
-  }, []);
-
-  const scheduleNextTarget =
-    useCallback(() => {
-      const id = window.setTimeout(() => {
-        if (phaseRef.current === 'playing') {
-          spawnTarget();
-        }
-      }, 280);
-
-      timerRefs.current.push(id);
-    }, [spawnTarget]);
-
-  const finish = useCallback(() => {
-    if (phaseRef.current !== 'playing') {
-      return;
-    }
-
-    phaseRef.current = 'intro';
+  const finish=()=>{
+    if(
+      phaseRef.current!=='live'
+    )return;
 
     cleanup();
 
+    phaseRef.current='intro';
+
     setPhase('intro');
 
-    const s = statsRef.current;
+    const st=stats.current;
 
-    const stops =
-      s.stopTimes.length > 0
-        ? s.stopTimes
-        : [0];
+    const stops=
+      st.stops.length
+        ?st.stops
+        :[999];
 
-    const avgStopMs =
-      s.stopTimes.length > 0
-        ? s.stopTimes.reduce(
-            (a, b) => a + b,
-            0,
-          ) / s.stopTimes.length
-        : 0;
-
-    const bestStopMs =
-      s.stopTimes.length > 0
-        ? Math.min(...s.stopTimes)
-        : 0;
-
-    const variance =
+    const avg=
       stops.reduce(
-        (sum, value) =>
-          sum +
-          (value - avgStopMs) ** 2,
-        0,
-      ) / stops.length;
+        (a,b)=>a+b,
+        0
+      )/stops.length;
 
-    const standardDeviation =
-      Math.sqrt(variance);
+    const best=
+      Math.min(...stops);
 
-    const consistency =
-      s.stopTimes.length > 0
-        ? clamp(
-            100 -
-              standardDeviation *
-                0.55,
-            0,
-            100,
-          )
-        : 0;
-
-    const accuracy =
-      s.shots > 0
-        ? (s.successes / s.shots) *
-          100
-        : 0;
-
-    const headRate =
-      s.shots > 0
-        ? (s.headHits / s.shots) *
-          100
-        : 0;
-
-    const movingRate =
-      s.shots > 0
-        ? (s.movingShots / s.shots) *
-          100
-        : 0;
-
-    const score = Math.round(
-      clamp(
-        accuracy * 0.45 +
-          headRate * 0.25 +
-          consistency * 0.2 +
-          Math.max(
-            0,
-            100 - movingRate * 2,
-          ) *
-            0.1,
-        0,
-        100,
-      ),
+    const sd=Math.sqrt(
+      stops.reduce(
+        (a,b)=>
+          a+(b-avg)**2,
+        0
+      )/stops.length
     );
 
-    const duration = clamp(
-      (performance.now() -
-        startRef.current) /
-        1000,
+    const cons=Math.max(
       0,
-      ROUND / 1000,
+      Math.min(
+        100,
+        100-sd*.55
+      )
+    );
+
+    const acc=
+      st.shots
+        ?st.success/
+          st.shots*
+          100
+        :0;
+
+    const head=
+      st.shots
+        ?st.head/
+          st.shots*
+          100
+        :0;
+
+    const movingPenalty=
+      st.shots
+        ?st.moving/
+          st.shots*
+          100
+        :0;
+
+    const score=Math.round(
+      Math.max(
+        0,
+        Math.min(
+          100,
+          acc*.45+
+          head*.35+
+          cons*.2-
+          movingPenalty*.12
+        )
+      )
     );
 
     onFinish({
       score,
-      accuracy,
-      avgStopMs,
-      bestStopMs,
-      consistency,
-      successes: s.successes,
-      trials: s.shots,
+      accuracy:acc,
+      avgStopMs:avg,
+      bestStopMs:best,
+      consistency:cons,
+      successes:st.success,
+      trials:st.shots,
       difficulty,
-      shots: s.shots,
-      movingShots: s.movingShots,
-      headHits: s.headHits,
-      bodyHits: s.bodyHits,
-      overshoots: s.overshoots,
-      undershoots: s.undershoots,
-      duration,
-      timeLimit: ROUND / 1000,
+      shots:st.shots,
+      movingShots:st.moving,
+      headHits:st.head,
+      bodyHits:st.body,
+      overshoots:st.over,
+      undershoots:st.under,
+      duration:Math.min(
+        TIME_LIMIT,
+        (performance.now()-
+          startAt.current)/
+          1000
+      ),
+      timeLimit:TIME_LIMIT
     });
-  }, [
-    cleanup,
-    difficulty,
-    onFinish,
-  ]);
+  };
 
-  const shoot = useCallback(() => {
-    if (
-      phaseRef.current !== 'playing'
-    ) {
-      return;
+  /*
+   * 타겟 생성
+   *
+   * 기존에는:
+   * 왼쪽 16~32
+   * 오른쪽 68~84
+   *
+   * 변경:
+   * 훨씬 넓은 범위에서 랜덤 생성.
+   *
+   * 이동 방향과 타겟 위치가
+   * 매번 조금씩 달라지도록 함.
+   */
+  const nextTarget=()=>{
+
+    const d=DIFF[difficulty];
+
+    const dir:1|-1=
+      Math.random()>.5
+        ?1
+        :-1;
+
+    let tx:number;
+
+    if(dir>0){
+
+      /*
+       * 오른쪽 방향 이동
+       * 타겟은 오른쪽 영역에서
+       * 넓게 랜덤.
+       */
+      tx=rand(58,88);
+
+    }else{
+
+      /*
+       * 왼쪽 방향 이동
+       * 타겟은 왼쪽 영역에서
+       * 넓게 랜덤.
+       */
+      tx=rand(12,42);
     }
-
-    const targetState =
-      targetRef.current;
-
-    if (!targetState) {
-      return;
-    }
-
-    const d = DIFF[difficulty];
-
-    const playerPosition =
-      playerRef.current;
-
-    const distance =
-      Math.abs(
-        playerPosition -
-          targetState.x,
-      );
-
-    const laneWidth =
-      document
-        .querySelector(
-          '.braking-lane',
-        )
-        ?.getBoundingClientRect()
-        .width ?? 1000;
-
-    const distancePx =
-      (distance / 100) *
-      laneWidth;
-
-    const currentSpeed =
-      Math.abs(
-        velocityRef.current,
-      );
-
-    const s = statsRef.current;
-
-    s.shots += 1;
 
     /*
-     * 반드시 실제 STOP 상태에서만
-     * 정상적인 명중 판정을 한다.
+     * 가끔 중앙 근처도 나오게 해서
+     * 패턴을 더 깨준다.
      */
-    if (
-      currentSpeed >
-        d.stopSpeed ||
-      !stoppedRef.current
-    ) {
-      s.movingShots += 1;
+    if(Math.random()<0.22){
 
-      setShot({
-        type: 'moving',
-        x: playerPosition,
-        id: targetState.id,
-      });
-
-      setMessage(
-        `MOVING SHOT · 속도 ${Math.round(
-          currentSpeed,
-        )}`,
-      );
-
-      syncHud();
-
-      scheduleNextTarget();
-
-      return;
+      if(dir>0){
+        tx=rand(48,72);
+      }else{
+        tx=rand(28,52);
+      }
     }
 
-    const bodyRadius =
-      Math.max(6, d.window) + 11;
+    targetRef.current=tx;
 
-    if (distancePx > bodyRadius) {
-      if (
-        playerPosition <
-        targetState.x
-      ) {
-        s.undershoots += 1;
-      } else {
-        s.overshoots += 1;
-      }
+    pos.current=50;
 
-      setShot({
-        type: 'miss',
-        x: playerPosition,
-        id: targetState.id,
-      });
+    /*
+     * 매번 출발 속도도 조금씩 랜덤.
+     */
+    const speedRatio=
+      0.62+
+      Math.random()*
+      0.20;
 
-      setMessage(
-        `MISS · 오차 ${Math.round(
-          distancePx,
-        )}px`,
-      );
-
-      syncHud();
-
-      scheduleNextTarget();
-
-      return;
-    }
-
-    s.successes += 1;
-
-    const stopMs =
-      movementStartRef.current > 0 &&
-      stoppedAtRef.current > 0
-        ? Math.max(
-            0,
-            stoppedAtRef.current -
-              movementStartRef.current,
-          )
-        : 0;
-
-    s.stopTimes.push(stopMs);
-
-    const headRadius =
-      Math.max(5, d.window);
-
-    const isHead =
-      distancePx <= headRadius;
-
-    if (isHead) {
-      s.headHits += 1;
-
-      setShot({
-        type: 'head',
-        x: playerPosition,
-        id: targetState.id,
-      });
-
-      setMessage(
-        `HEAD HIT · 오차 ${Math.round(
-          distancePx,
-        )}px · 정지 ${Math.round(
-          stopMs,
-        )}ms`,
-      );
-    } else {
-      s.bodyHits += 1;
-
-      setShot({
-        type: 'body',
-        x: playerPosition,
-        id: targetState.id,
-      });
-
-      setMessage(
-        `BODY HIT · 오차 ${Math.round(
-          distancePx,
-        )}px`,
-      );
-    }
-
-    syncHud();
-
-    scheduleNextTarget();
-  }, [
-    difficulty,
-    scheduleNextTarget,
-    syncHud,
-  ]);
-
-  const loop = useCallback(
-    (now: number) => {
-      if (
-        phaseRef.current !==
-        'playing'
-      ) {
-        return;
-      }
-
-      const d = DIFF[difficulty];
-
-      const elapsed =
-        now - startRef.current;
-
-      if (elapsed >= ROUND) {
-        finish();
-        return;
-      }
-
-      setTime(
-        Math.max(
-          0,
-          Math.ceil(
-            (ROUND - elapsed) /
-              1000,
-          ),
-        ),
-      );
-
-      const dt = clamp(
-        (now - lastRef.current) /
-          1000,
-        0.004,
-        0.025,
-      );
-
-      lastRef.current = now;
-
-      const input =
-        (keysRef.current.d ? 1 : 0) -
-        (keysRef.current.a ? 1 : 0);
-
-      /*
-       * 핵심:
-       * 키를 떼면 이미 keyup에서
-       * velocity = 0으로 만든다.
-       *
-       * 따라서 여기서 관성/마찰을
-       * 적용하지 않는다.
-       */
-      if (input === 0) {
-        velocityRef.current = 0;
-      } else {
-        /*
-         * 키를 누르고 있는 동안만 이동.
-         */
-        if (
-          velocityRef.current === 0
-        ) {
-          directionRef.current =
-            input as -1 | 1;
-
-          movementStartRef.current =
-            now;
-
-          stoppedRef.current =
-            false;
-
-          setCanFire(false);
-
-          setMessage(
-            input === 1
-              ? 'D 이동 중...'
-              : 'A 이동 중...',
-          );
-        }
-
-        velocityRef.current +=
-          input *
-          d.maxSpeed *
-          d.accel *
-          dt;
-
-        velocityRef.current =
-          clamp(
-            velocityRef.current,
-            -d.maxSpeed,
-            d.maxSpeed,
-          );
-      }
-
-      /*
-       * 키가 눌려 있는 동안은
-       * 절대 STOPPED 상태가 아니다.
-       */
-      if (input !== 0) {
-        stoppedRef.current = false;
-        setCanFire(false);
-      }
-
-      /*
-       * 실제 이동.
-       */
-      const nextPosition =
-        playerRef.current +
-        (velocityRef.current *
-          dt) /
-          10;
-
-      if (nextPosition <= 8) {
-        playerRef.current = 8;
-
-        if (
-          velocityRef.current < 0
-        ) {
-          velocityRef.current = 0;
-        }
-      } else if (
-        nextPosition >= 92
-      ) {
-        playerRef.current = 92;
-
-        if (
-          velocityRef.current > 0
-        ) {
-          velocityRef.current = 0;
-        }
-      } else {
-        playerRef.current =
-          nextPosition;
-      }
-
-      /*
-       * 키가 떼어진 상태라면
-       * 무조건 완전 정지.
-       */
-      if (
-        input === 0 &&
-        !keysRef.current.a &&
-        !keysRef.current.d
-      ) {
-        velocityRef.current = 0;
-
-        if (
-          !stoppedRef.current
-        ) {
-          stoppedRef.current =
-            true;
-
-          stoppedAtRef.current =
-            now;
-
-          setCanFire(true);
-
-          setMessage(
-            'STOPPED — FIRE',
-          );
-        }
-      }
-
-      setPlayer(
-        playerRef.current,
-      );
-
-      setSpeed(
-        Math.abs(
-          velocityRef.current,
-        ),
-      );
-
-      rafRef.current =
-        requestAnimationFrame(
-          loop,
-        );
-    },
-    [difficulty, finish],
-  );
-
-  const begin = useCallback(() => {
-    cleanup();
-
-    statsRef.current =
-      createStats();
-
-    targetRef.current = null;
-
-    targetIdRef.current = 0;
-
-    playerRef.current = 50;
-
-    velocityRef.current = 0;
-
-    directionRef.current = 0;
-
-    movementStartRef.current = 0;
-
-    stoppedAtRef.current = 0;
-
-    stoppedRef.current = false;
-
-    setHud({
-      hits: 0,
-      shots: 0,
-      head: 0,
-      moving: 0,
-    });
+    vel.current=
+      dir*
+      d.maxSpeed*
+      speedRatio;
 
     setPlayer(50);
 
-    setTarget(72);
+    setTarget(tx);
 
-    setSpeed(0);
-
-    setCanFire(false);
+    setSpeed(
+      Math.abs(vel.current)
+    );
 
     setShot(null);
 
-    setTime(30);
+    setCanFire(false);
 
-    phaseRef.current =
-      'countdown';
-
-    setPhase('countdown');
-
-    setCount(3);
-
-    let current = 3;
-
-    const countdown =
-      window.setInterval(() => {
-        current -= 1;
-
-        setCount(
-          Math.max(0, current),
-        );
-
-        if (current <= 0) {
-          window.clearInterval(
-            countdown,
-          );
-
-          phaseRef.current =
-            'playing';
-
-          setPhase('playing');
-
-          startRef.current =
-            performance.now();
-
-          lastRef.current =
-            performance.now();
-
-          spawnTarget();
-
-          rafRef.current =
-            requestAnimationFrame(
-              loop,
-            );
-
-          const gameTimer =
-            window.setInterval(() => {
-              if (
-                phaseRef.current !==
-                'playing'
-              ) {
-                window.clearInterval(
-                  gameTimer,
-                );
-
-                return;
-              }
-
-              const elapsed =
-                performance.now() -
-                startRef.current;
-
-              if (
-                elapsed >= ROUND
-              ) {
-                window.clearInterval(
-                  gameTimer,
-                );
-
-                finish();
-              }
-            }, 100);
-
-          timerRefs.current.push(
-            gameTimer,
-          );
-        }
-      }, COUNTDOWN_MS);
-
-    timerRefs.current.push(
-      countdown,
+    setMessage(
+      dir>0
+        ?'D로 이동 → A로 브레이크 → 완전 정지 후 발사'
+        :'A로 이동 → D로 브레이크 → 완전 정지 후 발사'
     );
-  }, [
-    cleanup,
-    finish,
-    loop,
-    spawnTarget,
-  ]);
 
-  /*
-   * 키보드 입력
-   *
-   * A/D 누름:
-   *   이동 시작
-   *
-   * A/D 뗌:
-   *   즉시 0속도
-   *   초록 STOPPED 상태
-   */
-  useEffect(() => {
-    const down = (
-      e: KeyboardEvent,
-    ) => {
-      const key =
-        e.key.toLowerCase();
+    brakeStart.current=0;
 
-      if (
-        key !== 'a' &&
-        key !== 'd'
-      ) {
-        return;
-      }
+    stopAt.current=0;
 
-      e.preventDefault();
+    stableSince.current=0;
 
-      if (
-        phaseRef.current !==
-        'playing'
-      ) {
-        return;
-      }
+    last.current=
+      performance.now();
+  };
 
-      keysRef.current[
-        key as 'a' | 'd'
-      ] = true;
+  const begin=()=>{
+
+    cleanup();
+
+    phaseRef.current='live';
+
+    stats.current={
+      stops:[],
+      success:0,
+      shots:0,
+      moving:0,
+      head:0,
+      body:0,
+      over:0,
+      under:0
+    };
+
+    setShots(0);
+
+    setTimeLeft(
+      TIME_LIMIT
+    );
+
+    setPhase('live');
+
+    startAt.current=
+      performance.now();
+
+    nextTarget();
+
+    raf.current=
+      requestAnimationFrame(
+        loop
+      );
+  };
+
+  const loop=(now:number)=>{
+
+    if(
+      phaseRef.current!=='live'
+    )return;
+
+    const d=DIFF[difficulty];
+
+    const elapsed=
+      (now-startAt.current)/
+      1000;
+
+    if(
+      elapsed>=TIME_LIMIT
+    ){
+      finish();
+      return;
+    }
+
+    setTimeLeft(
+      Math.max(
+        0,
+        Math.ceil(
+          TIME_LIMIT-
+          elapsed
+        )
+      )
+    );
+
+    const dt=Math.min(
+      .025,
+      Math.max(
+        .004,
+        (now-last.current)/
+        1000
+      )
+    );
+
+    last.current=now;
+
+    const input=
+      (keys.current.d?1:0)-
+      (keys.current.a?1:0);
+
+    const reversing=
+      input!==0&&
+      vel.current!==0&&
+      Math.sign(input)!==
+      Math.sign(vel.current);
+
+    /*
+     * 키를 떼면 즉시 정지.
+     */
+    if(input===0){
+
+      vel.current=0;
+
+    }else if(reversing){
 
       /*
-       * 키를 다시 누르는 순간
-       * STOP 상태 해제.
+       * 반대 키를 누르면
+       * 카운터 스트레이프로 즉시 정지.
        */
-      stoppedRef.current = false;
+      if(
+        brakeStart.current===0
+      ){
+        brakeStart.current=
+          now;
+      }
 
-      setCanFire(false);
+      vel.current=0;
 
-      setSpeed(
-        Math.abs(
-          velocityRef.current,
-        ),
+    }else{
+
+      /*
+       * 정상 이동.
+       */
+      vel.current+=
+        input*
+        d.maxSpeed*
+        d.accel*
+        dt;
+    }
+
+    vel.current=Math.max(
+      -d.maxSpeed,
+      Math.min(
+        d.maxSpeed,
+        vel.current
+      )
+    );
+
+    const abs=
+      Math.abs(vel.current);
+
+    /*
+     * 정지 판정.
+     */
+    if(
+      abs<
+      d.maxSpeed*.055
+    ){
+
+      if(
+        !stableSince.current
+      ){
+        stableSince.current=
+          now;
+      }
+
+      if(
+        !stopAt.current
+      ){
+        stopAt.current=now;
+      }
+
+    }else{
+
+      stableSince.current=0;
+
+      stopAt.current=0;
+    }
+
+    setCanFire(
+      abs<
+      d.maxSpeed*.055
+    );
+
+    pos.current=Math.max(
+      8,
+      Math.min(
+        92,
+        pos.current+
+        vel.current*
+        dt/
+        10
+      )
+    );
+
+    setPlayer(
+      pos.current
+    );
+
+    setSpeed(abs);
+
+    raf.current=
+      requestAnimationFrame(
+        loop
       );
+  };
+
+  const shoot=()=>{
+
+    if(
+      phaseRef.current!=='live'
+    )return;
+
+    const d=DIFF[difficulty];
+
+    const lane=
+      document.querySelector<HTMLDivElement>(
+        '.braking-lane'
+      );
+
+    const laneWidth=
+      lane?.getBoundingClientRect()
+        .width||1000;
+
+    const distPct=
+      Math.abs(
+        pos.current-
+        targetRef.current
+      );
+
+    const distPx=
+      distPct*
+      laneWidth/
+      100;
+
+    /*
+     * 난이도별 움직이는 상태 판정.
+     */
+    const moving=
+      Math.abs(vel.current)>
+      d.maxSpeed*.055;
+
+    /*
+     * 난이도별 헤드/몸 판정.
+     *
+     * NEWBIE
+     * BODY ±20 / HEAD ±9
+     *
+     * NORMAL
+     * BODY ±18 / HEAD ±8
+     *
+     * HARD
+     * BODY ±15 / HEAD ±7
+     *
+     * HELL
+     * BODY ±12 / HEAD ±5
+     */
+    const headRadius=
+      d.headRadius;
+
+    const bodyRadius=
+      d.bodyRadius;
+
+    const st=stats.current;
+
+    st.shots++;
+
+    setShots(
+      st.shots
+    );
+
+    /*
+     * 움직이는 상태에서 발사.
+     */
+    if(moving){
+
+      st.moving++;
+
+      setShot({
+        type:'moving',
+        x:pos.current
+      });
 
       setMessage(
-        key === 'd'
-          ? 'D 이동 중...'
-          : 'A 이동 중...',
+        `MOVING SHOT · ${Math.round(
+          Math.abs(
+            vel.current
+          )
+        )}px/s`
       );
-    };
 
-    const up = (
-      e: KeyboardEvent,
-    ) => {
-      const key =
+    }
+
+    /*
+     * 몸 판정 범위 밖.
+     */
+    else if(
+      distPx>
+      bodyRadius
+    ){
+
+      if(
+        pos.current<
+        targetRef.current
+      ){
+        st.under++;
+      }else{
+        st.over++;
+      }
+
+      setShot({
+        type:'miss',
+        x:pos.current
+      });
+
+      setMessage(
+        `MISS · 중심 오차 ${Math.round(
+          distPx
+        )}px`
+      );
+
+    }
+
+    /*
+     * 정상 적중.
+     */
+    else{
+
+      const stopMs=
+        brakeStart.current&&
+        stopAt.current
+          ?stopAt.current-
+            brakeStart.current
+          :0;
+
+      st.stops.push(
+        stopMs
+      );
+
+      st.success++;
+
+      const head=
+        distPx<=
+        headRadius;
+
+      if(head){
+
+        st.head++;
+
+      }else{
+
+        st.body++;
+
+      }
+
+      setShot({
+        type:
+          head
+            ?'head'
+            :'body',
+        x:pos.current
+      });
+
+      setMessage(
+        head
+          ?`HEAD HIT · 오차 ${Math.round(
+              distPx
+            )}px · ${Math.round(
+              stopMs
+            )}ms`
+          :`BODY HIT · 오차 ${Math.round(
+              distPx
+            )}px`
+      );
+    }
+
+    /*
+     * 다음 타겟.
+     */
+    setTimeout(()=>{
+      if(
+        phaseRef.current===
+        'live'
+      ){
+        nextTarget();
+      }
+    },260);
+  };
+
+  useEffect(()=>{
+
+    const down=(
+      e:KeyboardEvent
+    )=>{
+
+      const k=
         e.key.toLowerCase();
 
-      if (
-        key !== 'a' &&
-        key !== 'd'
-      ) {
-        return;
-      }
+      if(
+        k==='a'||
+        k==='d'
+      ){
 
-      e.preventDefault();
+        e.preventDefault();
 
-      keysRef.current[
-        key as 'a' | 'd'
-      ] = false;
-
-      /*
-       * 둘 중 하나라도 계속 눌려 있으면
-       * 아직 이동 중.
-       */
-      const noMovementInput =
-        !keysRef.current.a &&
-        !keysRef.current.d;
-
-      if (
-        phaseRef.current ===
-          'playing' &&
-        noMovementInput
-      ) {
-        /*
-         * ★ 핵심 브레이킹
-         *
-         * 키를 떼는 순간
-         * 관성을 완전히 제거한다.
-         */
-        velocityRef.current = 0;
-
-        stoppedRef.current = true;
-
-        stoppedAtRef.current =
-          performance.now();
-
-        setSpeed(0);
-
-        setCanFire(true);
-
-        setMessage(
-          'STOPPED — FIRE',
-        );
+        keys.current[
+          k as 'a'|'d'
+        ]=true;
       }
     };
 
-    const blur = () => {
-      keysRef.current.a = false;
-      keysRef.current.d = false;
+    const up=(
+      e:KeyboardEvent
+    )=>{
 
-      if (
-        phaseRef.current ===
-        'playing'
-      ) {
-        velocityRef.current = 0;
+      const k=
+        e.key.toLowerCase();
 
-        stoppedRef.current = true;
+      if(
+        k==='a'||
+        k==='d'
+      ){
 
-        stoppedAtRef.current =
-          performance.now();
+        e.preventDefault();
 
-        setSpeed(0);
-
-        setCanFire(true);
-
-        setMessage(
-          'STOPPED — FIRE',
-        );
+        keys.current[
+          k as 'a'|'d'
+        ]=false;
       }
     };
 
     window.addEventListener(
       'keydown',
-      down,
+      down
     );
 
     window.addEventListener(
       'keyup',
-      up,
+      up
     );
 
-    window.addEventListener(
-      'blur',
-      blur,
-    );
+    return()=>{
 
-    return () => {
       window.removeEventListener(
         'keydown',
-        down,
+        down
       );
 
       window.removeEventListener(
         'keyup',
-        up,
+        up
       );
-
-      window.removeEventListener(
-        'blur',
-        blur,
-      );
-    };
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      phaseRef.current =
-        'intro';
 
       cleanup();
     };
-  }, [cleanup]);
+
+  },[]);
 
   /*
    * INTRO
    */
-  if (phase === 'intro') {
-    return (
+  if(
+    phase==='intro'
+  ){
+
+    return(
       <main className="game-page">
+
         <header className="game-header">
+
           <button
             className="back-btn"
             onClick={onBack}
@@ -1078,6 +847,7 @@ export default function BrakingGame({
           </button>
 
           <div>
+
             <p className="eyebrow">
               BRAKING // COUNTER-STRAFE
             </p>
@@ -1085,53 +855,50 @@ export default function BrakingGame({
             <h1>
               브레이킹 훈련
             </h1>
+
           </div>
 
           <div className="game-help">
             30 SEC
           </div>
+
         </header>
 
         <section className="setup panel">
+
           <p className="eyebrow">
-            MOVE → RELEASE → STOP → FIRE
+            MOVE → COUNTER → STOP → FIRE
           </p>
 
           <h2>
-            움직임을 멈추는 순간을
-            정확하게 잡아.
+            정해진 시간 동안 얼마나 정확하게 멈추는지 측정해.
           </h2>
 
           <p className="setup-copy">
-            A / D로 이동하고 키를
-            떼는 순간 즉시 정지합니다.
-            초록색 STOPPED 상태가
-            되면 타겟을 클릭하세요.
-            움직이는 상태에서 클릭하면
-            MOVING SHOT으로 기록됩니다.
+            30초 동안 타겟 수 제한 없이 반복합니다.
+            A/D로 이동하고 반대 키로 속도를 죽인 뒤,
+            정지 상태에서 클릭하세요.
+            움직이는 상태에서 쏘면 MOVING SHOT으로 기록됩니다.
           </p>
 
           <div className="choice-grid difficulty-grid">
-            {(
-              Object.entries(
-                DIFF,
-              ) as [
-                Difficulty,
-                (typeof DIFF)[Difficulty],
-              ][]
-            ).map(
-              ([id, d]) => (
+
+            {Object.entries(DIFF).map(
+              ([id,d])=>(
                 <button
                   key={id}
                   className={`choice-card difficulty-${id} ${
-                    difficulty === id
-                      ? 'selected'
-                      : ''
+                    difficulty===id
+                      ?'selected'
+                      :''
                   }`}
-                  onClick={() =>
-                    setDifficulty(id)
+                  onClick={()=>
+                    setDifficulty(
+                      id as Difficulty
+                    )
                   }
                 >
+
                   <span className="choice-kicker">
                     {d.tag}
                   </span>
@@ -1145,14 +912,13 @@ export default function BrakingGame({
                   </em>
 
                   <small>
-                    최대{' '}
-                    {d.maxSpeed}
-                    px/s · 정지창
-                    ±{d.window}px
+                    최대 {d.maxSpeed}px/s · 정지창 ±{d.window}px
                   </small>
+
                 </button>
-              ),
+              )
             )}
+
           </div>
 
           <button
@@ -1161,48 +927,28 @@ export default function BrakingGame({
           >
             ▶ BRAKING 시작 · 30초
           </button>
+
         </section>
+
       </main>
     );
   }
 
   /*
-   * COUNTDOWN
+   * LIVE
    */
-  if (phase === 'countdown') {
-    return (
-      <main className="game-page">
-        <div className="countdown-screen">
-          <div className="countdown-card clean-countdown">
-            <strong>
-              {count}
-            </strong>
-          </div>
-        </div>
-      </main>
-    );
-  }
+  return(
 
-  /*
-   * PLAYING
-   */
-  return (
     <main className="game-page training-live">
+
       <header className="live-hud">
+
         <button
           className="back-btn"
-          onClick={() => {
-            phaseRef.current =
-              'intro';
+          onClick={()=>{
+            phaseRef.current='intro';
 
             cleanup();
-
-            targetRef.current =
-              null;
-
-            setTarget(72);
-
-            setPhase('intro');
 
             onBack();
           }}
@@ -1211,6 +957,7 @@ export default function BrakingGame({
         </button>
 
         <div>
+
           <b>
             COUNTER-STRAFE // STOP → AIM → SHOOT
           </b>
@@ -1218,132 +965,137 @@ export default function BrakingGame({
           <span>
             {DIFF[difficulty].label}
           </span>
+
         </div>
 
         <div className="live-stats">
+
           <span>
-            HIT <b>{hud.hits}</b>
+            HIT <b>
+              {stats.current.success}
+            </b>
           </span>
 
           <span>
-            SHOT <b>{hud.shots}</b>
+            SHOT <b>
+              {shots}
+            </b>
           </span>
 
           <span>
-            HEAD <b>{hud.head}</b>
+            COMBO <b>
+              —
+            </b>
           </span>
 
           <span>
-            MOVING{' '}
-            <b>{hud.moving}</b>
+            TIME <b>
+              {timeLeft}s
+            </b>
           </span>
 
-          <span>
-            TIME <b>{time}s</b>
-          </span>
         </div>
+
       </header>
 
       <div className="braking-stage">
-        <div className="braking-lane">
-          <div className="braking-center" />
 
-          <div
-            className={`braking-target ${
-              canFire
-                ? 'fire-window'
-                : ''
-            }`}
-            style={{
-              left: `${target}%`,
-            }}
-          >
+        <div className="braking-lane">
+
+          <div className="braking-center"/>
+<div
+  className={`braking-target ${
+    canFire ? 'fire-window' : ''
+  }`}
+  style={{
+    left: `${target}%`,
+    width: `${DIFF[difficulty].bodyRadius * 2}px`,
+    height: '82px'
+  }}
+>
+
             <span>
               ENEMY
             </span>
 
-            <i />
+            <i
+  style={{
+    width: `${DIFF[difficulty].headRadius * 2}px`,
+    height: `${DIFF[difficulty].headRadius * 2}px`
+  }}
+/>
+
           </div>
 
           <div
-            className={`braking-player ${
-              canFire
-                ? 'player-stopped'
-                : ''
-            }`}
+            className="braking-player"
             style={{
-              left: `${player}%`,
+              left:`${player}%`
             }}
           />
+
         </div>
 
         <div
           className={`braking-direction ${
             canFire
-              ? 'stopped'
-              : ''
+              ?'stopped'
+              :''
           }`}
         >
+
           {canFire
-            ? 'STOPPED — FIRE'
-            : speed > 0
-              ? 'STRAFE'
-              : 'BRAKE'}
+            ?'STOPPED — FIRE'
+            :speed<30
+              ?'BRAKE'
+              :'STRAFE'}
+
         </div>
 
-        {shot && (
+        {shot&&(
+
           <div
-            key={shot.id}
             className={`braking-shot ${shot.type}`}
             style={{
-              left: `${shot.x}%`,
+              left:`${shot.x}%`
             }}
           >
-            {shot.type ===
-            'head'
-              ? 'HEADSHOT'
-              : shot.type ===
-                  'body'
-                ? 'BODY HIT'
-                : shot.type ===
-                    'moving'
-                  ? 'MOVING SHOT'
-                  : 'MISS'}
+
+            {shot.type==='head'
+              ?'HEADSHOT'
+              :shot.type==='body'
+                ?'BODY HIT'
+                :shot.type==='moving'
+                  ?'MOVING SHOT'
+                  :'MISS'}
+
           </div>
+
         )}
 
-        <button
-          type="button"
-          className={`braking-crosshair ${
-            canFire
-              ? 'ready'
-              : ''
-          }`}
-          onPointerDown={(e) => {
-            e.preventDefault();
-            shoot();
-          }}
-          aria-label="Shoot"
+        <div
+          className="braking-crosshair"
+          onClick={shoot}
         >
           +
-        </button>
+        </div>
 
         <h2>
           {message}
         </h2>
 
         <p>
-          A / D 이동 →{' '}
+          A / D 이동 → 반대 키로 브레이크 →{' '}
           <b>
-            키를 떼면 즉시 정지
+            정지 상태에서 클릭
           </b>{' '}
-          →{' '}
-          <b>
-            초록색일 때 클릭
-          </b>{' '}
-          · <b>30초</b>
+          · <b>
+            30초 무제한 타겟
+          </b>
         </p>
+
       </div>
+
     </main>
   );
 }
