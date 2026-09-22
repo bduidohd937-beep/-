@@ -36,7 +36,6 @@ const DIFF: Record<
     desc: string;
     maxSpeed: number;
     accel: number;
-    brakePower: number;
     stopSpeed: number;
     window: number;
   }
@@ -44,10 +43,9 @@ const DIFF: Record<
   newbie: {
     label: '응애 나 뉴비에요',
     tag: 'ENTRY',
-    desc: '넓은 정지 창 · 카운터 스트레이프 감각',
+    desc: '넓은 정지 창 · 브레이킹 감각',
     maxSpeed: 360,
     accel: 4.2,
-    brakePower: 10.5,
     stopSpeed: 22,
     window: 14,
   },
@@ -58,7 +56,6 @@ const DIFF: Record<
     desc: '실전 템포 · 짧은 정지 창',
     maxSpeed: 500,
     accel: 5.4,
-    brakePower: 12.5,
     stopSpeed: 18,
     window: 9,
   },
@@ -69,7 +66,6 @@ const DIFF: Record<
     desc: '빠른 이동 · 짧은 발사 창',
     maxSpeed: 620,
     accel: 6.5,
-    brakePower: 14,
     stopSpeed: 15,
     window: 7,
   },
@@ -80,22 +76,14 @@ const DIFF: Record<
     desc: '프로 템포 · 극도로 짧은 발사 창',
     maxSpeed: 760,
     accel: 7.6,
-    brakePower: 16,
     stopSpeed: 12,
     window: 5,
   },
 };
 
-type Phase =
-  | 'intro'
-  | 'countdown'
-  | 'playing';
+type Phase = 'intro' | 'countdown' | 'playing';
 
-type ShotType =
-  | 'head'
-  | 'body'
-  | 'miss'
-  | 'moving';
+type ShotType = 'head' | 'body' | 'miss' | 'moving';
 
 type ShotState = {
   type: ShotType;
@@ -117,7 +105,6 @@ type Stats = {
   bodyHits: number;
   overshoots: number;
   undershoots: number;
-
   stopTimes: number[];
 };
 
@@ -145,38 +132,27 @@ export default function BrakingGame({
   onBack,
   onFinish,
 }: Props) {
-  /*
-   * ============================================================
-   * STATE
-   * ============================================================
-   */
-
   const [phase, setPhase] =
     useState<Phase>('intro');
 
   const [difficulty, setDifficulty] =
     useState<Difficulty>('normal');
 
-  const [count, setCount] =
-    useState(3);
+  const [count, setCount] = useState(3);
 
-  const [time, setTime] =
-    useState(30);
+  const [time, setTime] = useState(30);
 
-  const [player, setPlayer] =
-    useState(50);
+  const [player, setPlayer] = useState(50);
 
-  const [target, setTarget] =
-    useState(72);
+  const [target, setTarget] = useState(72);
 
-  const [speed, setSpeed] =
-    useState(0);
+  const [speed, setSpeed] = useState(0);
 
   const [canFire, setCanFire] =
     useState(false);
 
   const [message, setMessage] =
-    useState('D로 이동 → A로 브레이크');
+    useState('D로 이동 → 키를 떼면 정지');
 
   const [shot, setShot] =
     useState<ShotState | null>(null);
@@ -188,65 +164,42 @@ export default function BrakingGame({
     moving: 0,
   });
 
-  /*
-   * ============================================================
-   * REFS
-   * ============================================================
-   */
+  const phaseRef = useRef<Phase>('intro');
 
-  const phaseRef =
-    useRef<Phase>('intro');
+  const rafRef = useRef<number | null>(null);
 
-  const rafRef =
-    useRef<number | null>(null);
+  const timerRefs = useRef<number[]>([]);
 
-  const timerRefs =
-    useRef<number[]>([]);
+  const startRef = useRef(0);
 
-  const startRef =
-    useRef(0);
+  const lastRef = useRef(0);
 
-  const lastRef =
-    useRef(0);
-
-  const targetIdRef =
-    useRef(0);
+  const targetIdRef = useRef(0);
 
   const targetRef =
     useRef<TargetState | null>(null);
 
-  const playerRef =
-    useRef(50);
+  const playerRef = useRef(50);
 
-  const velocityRef =
-    useRef(0);
+  const velocityRef = useRef(0);
 
   const directionRef =
     useRef<-1 | 0 | 1>(0);
 
-  const brakeStartRef =
+  const movementStartRef =
     useRef(0);
 
-  const stoppedAtRef =
-    useRef(0);
+  const stoppedAtRef = useRef(0);
 
   const statsRef =
     useRef<Stats>(createStats());
 
-  const keysRef =
-    useRef({
-      a: false,
-      d: false,
-    });
+  const keysRef = useRef({
+    a: false,
+    d: false,
+  });
 
-  const stoppedRef =
-    useRef(false);
-
-  /*
-   * ============================================================
-   * CLEANUP
-   * ============================================================
-   */
+  const stoppedRef = useRef(false);
 
   const clearTimers = useCallback(() => {
     timerRefs.current.forEach((id) => {
@@ -259,10 +212,7 @@ export default function BrakingGame({
 
   const stopLoop = useCallback(() => {
     if (rafRef.current !== null) {
-      cancelAnimationFrame(
-        rafRef.current,
-      );
-
+      cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
     }
   }, []);
@@ -275,12 +225,6 @@ export default function BrakingGame({
     keysRef.current.d = false;
   }, [clearTimers, stopLoop]);
 
-  /*
-   * ============================================================
-   * HUD
-   * ============================================================
-   */
-
   const syncHud = useCallback(() => {
     const s = statsRef.current;
 
@@ -292,23 +236,13 @@ export default function BrakingGame({
     });
   }, []);
 
-  /*
-   * ============================================================
-   * TARGET
-   * ============================================================
-   */
-
   const spawnTarget = useCallback(() => {
-    if (
-      phaseRef.current !== 'playing'
-    ) {
+    if (phaseRef.current !== 'playing') {
       return;
     }
 
     const direction: -1 | 1 =
-      Math.random() < 0.5
-        ? -1
-        : 1;
+      Math.random() < 0.5 ? -1 : 1;
 
     const x =
       direction === 1
@@ -321,72 +255,46 @@ export default function BrakingGame({
       id: ++targetIdRef.current,
     };
 
-    targetRef.current =
-      targetState;
+    targetRef.current = targetState;
 
-    /*
-     * 항상 중앙에서 새 타겟으로 출발
-     */
     playerRef.current = 50;
-    velocityRef.current =
-      direction *
-      DIFF[difficulty].maxSpeed *
-      rand(0.62, 0.78);
 
-    directionRef.current =
-      direction;
+    velocityRef.current = 0;
 
-    brakeStartRef.current = 0;
+    directionRef.current = direction;
+
+    movementStartRef.current = 0;
+
     stoppedAtRef.current = 0;
-    stoppedRef.current = false;
+
+    stoppedRef.current = true;
 
     setPlayer(50);
+
     setTarget(x);
-    setSpeed(
-      Math.abs(velocityRef.current),
-    );
-    setCanFire(false);
+
+    setSpeed(0);
+
+    setCanFire(true);
+
     setShot(null);
 
-    setMessage(
-      direction === 1
-        ? 'D로 이동 → A로 브레이크'
-        : 'A로 이동 → D로 브레이크',
-    );
-  }, [difficulty]);
-
-  /*
-   * ============================================================
-   * NEXT TARGET
-   * ============================================================
-   */
+    setMessage('STOPPED — FIRE');
+  }, []);
 
   const scheduleNextTarget =
     useCallback(() => {
-      const id =
-        window.setTimeout(() => {
-          if (
-            phaseRef.current ===
-            'playing'
-          ) {
-            spawnTarget();
-          }
-        }, 280);
+      const id = window.setTimeout(() => {
+        if (phaseRef.current === 'playing') {
+          spawnTarget();
+        }
+      }, 280);
 
       timerRefs.current.push(id);
     }, [spawnTarget]);
 
-  /*
-   * ============================================================
-   * FINISH
-   * ============================================================
-   */
-
   const finish = useCallback(() => {
-    if (
-      phaseRef.current !==
-      'playing'
-    ) {
+    if (phaseRef.current !== 'playing') {
       return;
     }
 
@@ -408,8 +316,7 @@ export default function BrakingGame({
         ? s.stopTimes.reduce(
             (a, b) => a + b,
             0,
-          ) /
-          s.stopTimes.length
+          ) / s.stopTimes.length
         : 0;
 
     const bestStopMs =
@@ -417,9 +324,6 @@ export default function BrakingGame({
         ? Math.min(...s.stopTimes)
         : 0;
 
-    /*
-     * 정지시간의 표준편차
-     */
     const variance =
       stops.reduce(
         (sum, value) =>
@@ -431,11 +335,6 @@ export default function BrakingGame({
     const standardDeviation =
       Math.sqrt(variance);
 
-    /*
-     * 일관성
-     *
-     * 표준편차가 낮을수록 높게 평가.
-     */
     const consistency =
       s.stopTimes.length > 0
         ? clamp(
@@ -449,39 +348,22 @@ export default function BrakingGame({
 
     const accuracy =
       s.shots > 0
-        ? (s.successes /
-            s.shots) *
+        ? (s.successes / s.shots) *
           100
         : 0;
 
-    /*
-     * 헤드 적중률
-     */
     const headRate =
       s.shots > 0
-        ? (s.headHits /
-            s.shots) *
+        ? (s.headHits / s.shots) *
           100
         : 0;
 
-    /*
-     * 움직이는 상태에서 발사한 비율
-     */
     const movingRate =
       s.shots > 0
-        ? (s.movingShots /
-            s.shots) *
+        ? (s.movingShots / s.shots) *
           100
         : 0;
 
-    /*
-     * 점수
-     *
-     * 정확도 45
-     * 헤드 25
-     * 정지 일관성 20
-     * 움직임 제어 10
-     */
     const score = Math.round(
       clamp(
         accuracy * 0.45 +
@@ -511,21 +393,15 @@ export default function BrakingGame({
       avgStopMs,
       bestStopMs,
       consistency,
-
       successes: s.successes,
       trials: s.shots,
-
       difficulty,
-
       shots: s.shots,
       movingShots: s.movingShots,
-
       headHits: s.headHits,
       bodyHits: s.bodyHits,
-
       overshoots: s.overshoots,
       undershoots: s.undershoots,
-
       duration,
       timeLimit: ROUND / 1000,
     });
@@ -535,16 +411,9 @@ export default function BrakingGame({
     onFinish,
   ]);
 
-  /*
-   * ============================================================
-   * SHOOT
-   * ============================================================
-   */
-
   const shoot = useCallback(() => {
     if (
-      phaseRef.current !==
-      'playing'
+      phaseRef.current !== 'playing'
     ) {
       return;
     }
@@ -556,8 +425,7 @@ export default function BrakingGame({
       return;
     }
 
-    const d =
-      DIFF[difficulty];
+    const d = DIFF[difficulty];
 
     const playerPosition =
       playerRef.current;
@@ -568,16 +436,12 @@ export default function BrakingGame({
           targetState.x,
       );
 
-    /*
-     * lane 기준으로 계산하기 때문에
-     * 실제 화면에서는 적당한 px 값으로 환산.
-     *
-     * 100% = lane 전체
-     */
     const laneWidth =
-      document.querySelector(
-        '.braking-lane',
-      )?.getBoundingClientRect()
+      document
+        .querySelector(
+          '.braking-lane',
+        )
+        ?.getBoundingClientRect()
         .width ?? 1000;
 
     const distancePx =
@@ -589,20 +453,18 @@ export default function BrakingGame({
         velocityRef.current,
       );
 
-    const s =
-      statsRef.current;
+    const s = statsRef.current;
 
     s.shots += 1;
 
     /*
-     * ----------------------------------------------------------
-     * 1. 움직이는 상태에서 발사
-     * ----------------------------------------------------------
+     * 반드시 실제 STOP 상태에서만
+     * 정상적인 명중 판정을 한다.
      */
-
     if (
       currentSpeed >
-      d.stopSpeed
+        d.stopSpeed ||
+      !stoppedRef.current
     ) {
       s.movingShots += 1;
 
@@ -625,22 +487,10 @@ export default function BrakingGame({
       return;
     }
 
-    /*
-     * ----------------------------------------------------------
-     * 2. 완전히 멈췄지만 타겟을 빗나감
-     * ----------------------------------------------------------
-     */
-
     const bodyRadius =
-      Math.max(
-        6,
-        d.window,
-      ) + 11;
+      Math.max(6, d.window) + 11;
 
-    if (
-      distancePx >
-      bodyRadius
-    ) {
+    if (distancePx > bodyRadius) {
       if (
         playerPosition <
         targetState.x
@@ -669,35 +519,25 @@ export default function BrakingGame({
       return;
     }
 
-    /*
-     * ----------------------------------------------------------
-     * 3. 정상 적중
-     * ----------------------------------------------------------
-     */
-
     s.successes += 1;
 
     const stopMs =
-      brakeStartRef.current > 0 &&
+      movementStartRef.current > 0 &&
       stoppedAtRef.current > 0
         ? Math.max(
             0,
             stoppedAtRef.current -
-              brakeStartRef.current,
+              movementStartRef.current,
           )
         : 0;
 
     s.stopTimes.push(stopMs);
 
     const headRadius =
-      Math.max(
-        5,
-        d.window,
-      );
+      Math.max(5, d.window);
 
     const isHead =
-      distancePx <=
-      headRadius;
+      distancePx <= headRadius;
 
     if (isHead) {
       s.headHits += 1;
@@ -740,12 +580,6 @@ export default function BrakingGame({
     syncHud,
   ]);
 
-  /*
-   * ============================================================
-   * GAME LOOP
-   * ============================================================
-   */
-
   const loop = useCallback(
     (now: number) => {
       if (
@@ -755,19 +589,12 @@ export default function BrakingGame({
         return;
       }
 
-      const d =
-        DIFF[difficulty];
+      const d = DIFF[difficulty];
 
-      /*
-       * 30초 종료
-       */
       const elapsed =
-        now -
-        startRef.current;
+        now - startRef.current;
 
-      if (
-        elapsed >= ROUND
-      ) {
+      if (elapsed >= ROUND) {
         finish();
         return;
       }
@@ -782,9 +609,6 @@ export default function BrakingGame({
         ),
       );
 
-      /*
-       * 안정적인 delta time
-       */
       const dt = clamp(
         (now - lastRef.current) /
           1000,
@@ -795,104 +619,42 @@ export default function BrakingGame({
       lastRef.current = now;
 
       const input =
-        (keysRef.current.d
-          ? 1
-          : 0) -
-        (keysRef.current.a
-          ? 1
-          : 0);
-
-      const oldVelocity =
-        velocityRef.current;
+        (keysRef.current.d ? 1 : 0) -
+        (keysRef.current.a ? 1 : 0);
 
       /*
-       * ----------------------------------------------------------
-       * 이동
-       * ----------------------------------------------------------
+       * 핵심:
+       * 키를 떼면 이미 keyup에서
+       * velocity = 0으로 만든다.
+       *
+       * 따라서 여기서 관성/마찰을
+       * 적용하지 않는다.
        */
-
       if (input === 0) {
+        velocityRef.current = 0;
+      } else {
         /*
-         * 키를 놓으면 자연 감속
-         */
-        const friction =
-          d.maxSpeed *
-          4.5 *
-          dt;
-
-        if (
-          Math.abs(
-            velocityRef.current,
-          ) <= friction
-        ) {
-          velocityRef.current = 0;
-        } else {
-          velocityRef.current -=
-            Math.sign(
-              velocityRef.current,
-            ) *
-            friction;
-        }
-      }
-
-      /*
-       * ----------------------------------------------------------
-       * 카운터 스트레이프
-       * ----------------------------------------------------------
-       */
-
-      const reversing =
-        input !== 0 &&
-        oldVelocity !== 0 &&
-        Math.sign(input) !==
-          Math.sign(oldVelocity);
-
-      if (reversing) {
-        if (
-          brakeStartRef.current ===
-          0
-        ) {
-          brakeStartRef.current =
-            now;
-
-          stoppedAtRef.current = 0;
-          stoppedRef.current = false;
-
-          setMessage(
-            'BRAKING... 속도를 죽이는 중',
-          );
-        }
-
-        const brakeAmount =
-          d.maxSpeed *
-          d.brakePower *
-          dt;
-
-        if (
-          Math.abs(
-            velocityRef.current,
-          ) <= brakeAmount
-        ) {
-          velocityRef.current = 0;
-        } else {
-          velocityRef.current -=
-            Math.sign(
-              velocityRef.current,
-            ) *
-            brakeAmount;
-        }
-      } else if (
-        input !== 0
-      ) {
-        /*
-         * 완전히 정지 후
-         * 반대 방향으로 다시 이동
+         * 키를 누르고 있는 동안만 이동.
          */
         if (
           velocityRef.current === 0
         ) {
           directionRef.current =
             input as -1 | 1;
+
+          movementStartRef.current =
+            now;
+
+          stoppedRef.current =
+            false;
+
+          setCanFire(false);
+
+          setMessage(
+            input === 1
+              ? 'D 이동 중...'
+              : 'A 이동 중...',
+          );
         }
 
         velocityRef.current +=
@@ -900,89 +662,38 @@ export default function BrakingGame({
           d.maxSpeed *
           d.accel *
           dt;
-      }
 
-      /*
-       * 속도 제한
-       */
-      velocityRef.current =
-        clamp(
-          velocityRef.current,
-          -d.maxSpeed,
-          d.maxSpeed,
-        );
-
-      const absSpeed =
-        Math.abs(
-          velocityRef.current,
-        );
-
-      /*
-       * ----------------------------------------------------------
-       * 정지 판정
-       * ----------------------------------------------------------
-       */
-
-      const isStopped =
-        absSpeed <=
-        d.stopSpeed;
-
-      if (isStopped) {
-        /*
-         * 거의 0이면 실제 0으로 고정
-         */
-        if (
-          absSpeed <=
-          d.stopSpeed * 0.35
-        ) {
-          velocityRef.current = 0;
-        }
-
-        if (
-          !stoppedRef.current &&
-          brakeStartRef.current > 0
-        ) {
-          stoppedRef.current = true;
-
-          stoppedAtRef.current =
-            now;
-
-          setMessage(
-            'STOPPED — FIRE',
+        velocityRef.current =
+          clamp(
+            velocityRef.current,
+            -d.maxSpeed,
+            d.maxSpeed,
           );
-        }
-      } else {
-        stoppedRef.current = false;
       }
 
       /*
-       * 발사 가능 상태
+       * 키가 눌려 있는 동안은
+       * 절대 STOPPED 상태가 아니다.
        */
-      setCanFire(
-        isStopped &&
-          stoppedRef.current,
-      );
+      if (input !== 0) {
+        stoppedRef.current = false;
+        setCanFire(false);
+      }
 
       /*
-       * ----------------------------------------------------------
-       * 위치 업데이트
-       * ----------------------------------------------------------
+       * 실제 이동.
        */
-
       const nextPosition =
         playerRef.current +
         (velocityRef.current *
           dt) /
           10;
 
-      if (
-        nextPosition <= 8
-      ) {
+      if (nextPosition <= 8) {
         playerRef.current = 8;
 
         if (
-          velocityRef.current <
-          0
+          velocityRef.current < 0
         ) {
           velocityRef.current = 0;
         }
@@ -992,8 +703,7 @@ export default function BrakingGame({
         playerRef.current = 92;
 
         if (
-          velocityRef.current >
-          0
+          velocityRef.current > 0
         ) {
           velocityRef.current = 0;
         }
@@ -1003,8 +713,33 @@ export default function BrakingGame({
       }
 
       /*
-       * React UI 업데이트
+       * 키가 떼어진 상태라면
+       * 무조건 완전 정지.
        */
+      if (
+        input === 0 &&
+        !keysRef.current.a &&
+        !keysRef.current.d
+      ) {
+        velocityRef.current = 0;
+
+        if (
+          !stoppedRef.current
+        ) {
+          stoppedRef.current =
+            true;
+
+          stoppedAtRef.current =
+            now;
+
+          setCanFire(true);
+
+          setMessage(
+            'STOPPED — FIRE',
+          );
+        }
+      }
+
       setPlayer(
         playerRef.current,
       );
@@ -1023,12 +758,6 @@ export default function BrakingGame({
     [difficulty, finish],
   );
 
-  /*
-   * ============================================================
-   * BEGIN
-   * ============================================================
-   */
-
   const begin = useCallback(() => {
     cleanup();
 
@@ -1045,7 +774,7 @@ export default function BrakingGame({
 
     directionRef.current = 0;
 
-    brakeStartRef.current = 0;
+    movementStartRef.current = 0;
 
     stoppedAtRef.current = 0;
 
@@ -1059,10 +788,15 @@ export default function BrakingGame({
     });
 
     setPlayer(50);
+
     setTarget(72);
+
     setSpeed(0);
+
     setCanFire(false);
+
     setShot(null);
+
     setTime(30);
 
     phaseRef.current =
@@ -1105,9 +839,6 @@ export default function BrakingGame({
               loop,
             );
 
-          /*
-           * 게임 시간 제한
-           */
           const gameTimer =
             window.setInterval(() => {
               if (
@@ -1153,11 +884,15 @@ export default function BrakingGame({
   ]);
 
   /*
-   * ============================================================
-   * KEY EVENTS
-   * ============================================================
+   * 키보드 입력
+   *
+   * A/D 누름:
+   *   이동 시작
+   *
+   * A/D 뗌:
+   *   즉시 0속도
+   *   초록 STOPPED 상태
    */
-
   useEffect(() => {
     const down = (
       e: KeyboardEvent,
@@ -1174,9 +909,36 @@ export default function BrakingGame({
 
       e.preventDefault();
 
+      if (
+        phaseRef.current !==
+        'playing'
+      ) {
+        return;
+      }
+
       keysRef.current[
         key as 'a' | 'd'
       ] = true;
+
+      /*
+       * 키를 다시 누르는 순간
+       * STOP 상태 해제.
+       */
+      stoppedRef.current = false;
+
+      setCanFire(false);
+
+      setSpeed(
+        Math.abs(
+          velocityRef.current,
+        ),
+      );
+
+      setMessage(
+        key === 'd'
+          ? 'D 이동 중...'
+          : 'A 이동 중...',
+      );
     };
 
     const up = (
@@ -1197,11 +959,66 @@ export default function BrakingGame({
       keysRef.current[
         key as 'a' | 'd'
       ] = false;
+
+      /*
+       * 둘 중 하나라도 계속 눌려 있으면
+       * 아직 이동 중.
+       */
+      const noMovementInput =
+        !keysRef.current.a &&
+        !keysRef.current.d;
+
+      if (
+        phaseRef.current ===
+          'playing' &&
+        noMovementInput
+      ) {
+        /*
+         * ★ 핵심 브레이킹
+         *
+         * 키를 떼는 순간
+         * 관성을 완전히 제거한다.
+         */
+        velocityRef.current = 0;
+
+        stoppedRef.current = true;
+
+        stoppedAtRef.current =
+          performance.now();
+
+        setSpeed(0);
+
+        setCanFire(true);
+
+        setMessage(
+          'STOPPED — FIRE',
+        );
+      }
     };
 
     const blur = () => {
       keysRef.current.a = false;
       keysRef.current.d = false;
+
+      if (
+        phaseRef.current ===
+        'playing'
+      ) {
+        velocityRef.current = 0;
+
+        stoppedRef.current = true;
+
+        stoppedAtRef.current =
+          performance.now();
+
+        setSpeed(0);
+
+        setCanFire(true);
+
+        setMessage(
+          'STOPPED — FIRE',
+        );
+      }
     };
 
     window.addEventListener(
@@ -1237,12 +1054,6 @@ export default function BrakingGame({
     };
   }, []);
 
-  /*
-   * ============================================================
-   * UNMOUNT
-   * ============================================================
-   */
-
   useEffect(() => {
     return () => {
       phaseRef.current =
@@ -1253,11 +1064,8 @@ export default function BrakingGame({
   }, [cleanup]);
 
   /*
-   * ============================================================
    * INTRO
-   * ============================================================
    */
-
   if (phase === 'intro') {
     return (
       <main className="game-page">
@@ -1286,7 +1094,7 @@ export default function BrakingGame({
 
         <section className="setup panel">
           <p className="eyebrow">
-            MOVE → COUNTER → STOP → FIRE
+            MOVE → RELEASE → STOP → FIRE
           </p>
 
           <h2>
@@ -1295,9 +1103,10 @@ export default function BrakingGame({
           </h2>
 
           <p className="setup-copy">
-            A / D로 이동하고 반대 방향
-            키를 눌러 속도를 줄입니다.
-            완전히 멈춘 순간 타겟을 클릭하세요.
+            A / D로 이동하고 키를
+            떼는 순간 즉시 정지합니다.
+            초록색 STOPPED 상태가
+            되면 타겟을 클릭하세요.
             움직이는 상태에서 클릭하면
             MOVING SHOT으로 기록됩니다.
           </p>
@@ -1336,9 +1145,10 @@ export default function BrakingGame({
                   </em>
 
                   <small>
-                    최대 {d.maxSpeed}
-                    px/s · 정지창 ±
-                    {d.window}px
+                    최대{' '}
+                    {d.maxSpeed}
+                    px/s · 정지창
+                    ±{d.window}px
                   </small>
                 </button>
               ),
@@ -1357,14 +1167,9 @@ export default function BrakingGame({
   }
 
   /*
-   * ============================================================
    * COUNTDOWN
-   * ============================================================
    */
-
-  if (
-    phase === 'countdown'
-  ) {
+  if (phase === 'countdown') {
     return (
       <main className="game-page">
         <div className="countdown-screen">
@@ -1379,11 +1184,8 @@ export default function BrakingGame({
   }
 
   /*
-   * ============================================================
-   * LIVE
-   * ============================================================
+   * PLAYING
    */
-
   return (
     <main className="game-page training-live">
       <header className="live-hud">
@@ -1410,8 +1212,7 @@ export default function BrakingGame({
 
         <div>
           <b>
-            COUNTER-STRAFE //
-            STOP → AIM → SHOOT
+            COUNTER-STRAFE // STOP → AIM → SHOOT
           </b>
 
           <span>
@@ -1421,38 +1222,24 @@ export default function BrakingGame({
 
         <div className="live-stats">
           <span>
-            HIT{' '}
-            <b>
-              {hud.hits}
-            </b>
+            HIT <b>{hud.hits}</b>
           </span>
 
           <span>
-            SHOT{' '}
-            <b>
-              {hud.shots}
-            </b>
+            SHOT <b>{hud.shots}</b>
           </span>
 
           <span>
-            HEAD{' '}
-            <b>
-              {hud.head}
-            </b>
+            HEAD <b>{hud.head}</b>
           </span>
 
           <span>
             MOVING{' '}
-            <b>
-              {hud.moving}
-            </b>
+            <b>{hud.moving}</b>
           </span>
 
           <span>
-            TIME{' '}
-            <b>
-              {time}s
-            </b>
+            TIME <b>{time}s</b>
           </span>
         </div>
       </header>
@@ -1499,9 +1286,9 @@ export default function BrakingGame({
         >
           {canFire
             ? 'STOPPED — FIRE'
-            : speed < 30
-              ? 'BRAKE'
-              : 'STRAFE'}
+            : speed > 0
+              ? 'STRAFE'
+              : 'BRAKE'}
         </div>
 
         {shot && (
@@ -1512,9 +1299,11 @@ export default function BrakingGame({
               left: `${shot.x}%`,
             }}
           >
-            {shot.type === 'head'
+            {shot.type ===
+            'head'
               ? 'HEADSHOT'
-              : shot.type === 'body'
+              : shot.type ===
+                  'body'
                 ? 'BODY HIT'
                 : shot.type ===
                     'moving'
@@ -1530,11 +1319,8 @@ export default function BrakingGame({
               ? 'ready'
               : ''
           }`}
-          onPointerDown={(
-            e,
-          ) => {
+          onPointerDown={(e) => {
             e.preventDefault();
-
             shoot();
           }}
           aria-label="Shoot"
@@ -1547,15 +1333,15 @@ export default function BrakingGame({
         </h2>
 
         <p>
-          A / D 이동 → 반대 키로
-          브레이크 →{' '}
+          A / D 이동 →{' '}
           <b>
-            정지 상태에서 클릭
+            키를 떼면 즉시 정지
           </b>{' '}
-          ·{' '}
+          →{' '}
           <b>
-            30초 무제한 타겟
-          </b>
+            초록색일 때 클릭
+          </b>{' '}
+          · <b>30초</b>
         </p>
       </div>
     </main>
