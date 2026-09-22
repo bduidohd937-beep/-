@@ -20,6 +20,20 @@ import platinum1 from './ranks/tile016.png';
 import platinum2 from './ranks/tile017.png';
 import platinum3 from './ranks/tile018.png';
 
+import diamond1 from './ranks/tile020.png';
+import diamond2 from './ranks/tile021.png';
+import diamond3 from './ranks/tile022.png';
+
+import ascendant1 from './ranks/tile023.png';
+import ascendant2 from './ranks/tile025.png';
+import ascendant3 from './ranks/tile026.png';
+
+import immortal1 from './ranks/tile027.png';
+import immortal2 from './ranks/tile028.png';
+import immortal3 from './ranks/tile031.png';
+
+import radiant from './ranks/tile032.png';
+
 export interface RankInfo {
   id: string;
   name: string;
@@ -49,6 +63,20 @@ export const RANKS: RankInfo[] = [
   { id: 'platinum1', name: '플래티넘 1', tier: 13, image: platinum1 },
   { id: 'platinum2', name: '플래티넘 2', tier: 14, image: platinum2 },
   { id: 'platinum3', name: '플래티넘 3', tier: 15, image: platinum3 },
+
+  { id: 'diamond1', name: '다이아몬드 1', tier: 16, image: diamond1 },
+  { id: 'diamond2', name: '다이아몬드 2', tier: 17, image: diamond2 },
+  { id: 'diamond3', name: '다이아몬드 3', tier: 18, image: diamond3 },
+
+  { id: 'ascendant1', name: '초월자 1', tier: 19, image: ascendant1 },
+  { id: 'ascendant2', name: '초월자 2', tier: 20, image: ascendant2 },
+  { id: 'ascendant3', name: '초월자 3', tier: 21, image: ascendant3 },
+
+  { id: 'immortal1', name: '불멸 1', tier: 22, image: immortal1 },
+  { id: 'immortal2', name: '불멸 2', tier: 23, image: immortal2 },
+  { id: 'immortal3', name: '불멸 3', tier: 24, image: immortal3 },
+
+  { id: 'radiant', name: '레디언트', tier: 25, image: radiant },
 ];
 
 export function getRank(tier: number): RankInfo {
